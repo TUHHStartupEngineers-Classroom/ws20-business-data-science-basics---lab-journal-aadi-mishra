@@ -1,7 +1,7 @@
 ---
 title: "Journal (reproducible report)"
-author: "Joschka Schwarz"
-date: "2020-11-05"
+author: "Aadi Nath Mishra"
+date: "Dec 3 2020"
 output:
   html_document:
     toc: true
