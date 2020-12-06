@@ -69,7 +69,6 @@ sales_by_loc_tbl <- bike_orderlines_wrangled_tbl %>%
   # Grouping by year and summarizing sales
   group_by(state) %>% 
   summarize(sales = sum(total_price)) %>%
-  arrange(desc(sales)) %>%
   # Optional: Add a column that turns the numbers into a currency format 
   # (makes it in the plot optically more appealing)
   # mutate(sales_text = scales::dollar(sales)) <- Works for dollar values
@@ -85,15 +84,15 @@ sales_by_loc_tbl %>%
   # Step 2 - Visualize
   # Setup canvas with the columns state (x-axis) and sales (y-axis)
   # States are reordered in decreasing sales for a better visual (e.g. similar to Pareto chart)
-  ggplot(aes(x = reorder(state,-sales), y = sales)) +
+  ggplot(aes(x = state, y = sales)) +
   # Rotate the x-axis labels
   theme(axis.title.x = element_text(), axis.text.x = element_text(angle = 45, hjust = 1)) +
   
   # Geometries
-  geom_col(fill = "#2D303E") + # Use geom_col for a bar plot and fill with color
+  geom_col(fill = "blue") + # Use geom_col for a bar plot and fill with color
   # Adding labels to the bars along with formatting for better presentation
   geom_text(aes(label = sales_text), position = position_dodge(width = 0.9), 
-            hjust = -0.1, size = 2.5, show.legend = FALSE, angle = 90) +
+            hjust = -0.1, size = 2.5, show.legend = FALSE, angle = 45) +
   
   # Formatting and re-scaling the y-axis
   # Again, we have to adjust it for euro values
@@ -105,7 +104,6 @@ sales_by_loc_tbl %>%
   
   # Final touches to the plot to ensure titles/subtitles are present
   labs(title    = "Revenue by State",
-       subtitle = "Ordered from most to least total revenue",
        x = "State", # Changes the x-axis name
        y = "Revenue")
 ```
@@ -152,10 +150,6 @@ sales_by_loc_year_tbl %>%
   # Facet
   facet_wrap(~ state, nrow = 2) +
   
-  # Adding labels to the bars along with formatting for better presentation
-  geom_text(aes(label = sales_text), position = position_dodge(width = 0.9), 
-            hjust = -0.1, size = 2.5, show.legend = FALSE, angle=90) +
-  
   # Formatting and re-scaling the y-axis
   # Again, we have to adjust it for euro values
   scale_y_continuous(expand = c(0,0), limits = c(0,7500000),
@@ -176,6 +170,7 @@ Last compiled: `r Sys.Date()`
 
 # Challenge 2 - Data Acquisition
 
+## Using Public API
 ```{r}
 # Import Libraries
 library(fs)
@@ -207,9 +202,10 @@ response_tbl <- fromJSON(content(response, as = "text")) %>%
 
 
 response_tbl
+```
 
-#######
-#Web Scraping 
+## Web Scraping 
+```{r}
 url_home <- "https://www.radon-bikes.de/"
 html_home <- read_html(url_home)
 radonbike_category_tbl <- html_home%>% 
@@ -252,4 +248,155 @@ radonbike_fullsuspension_prices_tbl
 
 ```
 
-When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
+
+# Challange 3 - Data Wrangling
+
+  ## Step 1: Load libraries
+
+```{r}
+# 1.0 libraries
+library(vroom)
+library(readxl)
+library("writexl")
+library(tidyr)
+library(purrr)
+library("stringr") 
+library(dplyr)
+library(data.table)
+# Tidyverse
+library(tidyverse)
+
+```
+
+## Step 2: Import the data
+
+```{r calculation, eval=TRUE}
+# 2.0 import data
+col_assignee <- list(
+  id = col_character(),
+  type = col_character(),
+  organization = col_character()
+)
+col_patent_assignee <- list(
+  patent_id = col_character(),
+  assignee_id = col_character()
+)
+
+col_patent <- list(
+  id = col_character(),
+  date = col_date("%Y-%m-%d"),
+  num_claims = col_double()
+)
+
+col_uspc <- list(
+  patent_id = col_character(),
+  mainclass_id = col_character(),
+  sequence = col_character()
+)
+
+patent_tbl <- vroom(
+  file       = "DS_101/00_data/03_patent_data/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_patent,
+  na         = c("", "NA", "NULL")
+)
+assignee_tbl <- vroom(
+  
+  file = "DS_101/00_data/03_patent_data/assignee.tsv",
+  delim      = "\t", 
+  col_types  = col_assignee,
+  na         = c("", "NA", "NULL")
+)
+patent_assignee_tbl <- vroom(
+  
+  file = "DS_101/00_data/03_patent_data/patent_assignee.tsv",
+  delim      = "\t", 
+  col_types  =  col_patent_assignee,
+  na         = c("", "NA", "NULL")
+  
+)
+uspc_tbl <- vroom(
+  
+  file = "DS_101/00_data/03_patent_data/uspc.tsv",
+  delim      = "\t", 
+  col_types  =  col_uspc,
+  na         = c("", "NA", "NULL")
+  
+)
+```
+
+
+## Step 3: Wrangle & Analyze the data
+
+```{r calculation2, eval=TRUE}
+
+patent_tbl <- patent_tbl %>% 
+  mutate(year = lubridate::year(date))
+
+assignee_tbl <- assignee_tbl %>% rename(assignee_id = id)
+patent_tbl <- patent_tbl %>% rename(patent_id = id)
+```
+
+
+### Patent Dominance (Question 1)
+
+```{r calculation3, eval=TRUE}
+combined_tbl <- patent_assignee_tbl %>%
+  left_join(assignee_tbl, by = "assignee_id")
+
+combined_tbl$patent_count <- ifelse(!is.na(combined_tbl$patent_id), 1, 0)
+
+result10 <- combined_tbl %>%
+  # Filter by type 2 to get US Companies/Organizations
+  filter(type == 2) %>%
+  # Add number of patents by each organization and sort in descending order
+  # Changed the column name for better legibility of what were looking for
+  group_by("US Company / Organization" = organization) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents)) %>%
+  # Output the top 10 US companies/organizations with most assigned/granted patents
+  slice(1:10)
+result10
+```
+
+### Recent Patent Activity (Question 2)
+
+```{r calculation4, eval=TRUE}
+# By the Year
+combined_tbl <- patent_assignee_tbl %>%
+  right_join(patent_tbl, by = "patent_id")%>%
+  right_join(assignee_tbl, by = 'assignee_id')
+
+combined_tbl$patent_count <- ifelse(!is.na(combined_tbl$patent_id), 1, 0)
+
+result11 <- combined_tbl %>%
+  filter(type == 2 & year == 2014) %>%
+  group_by(organization) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents))%>%
+  slice(1:10)
+result11
+```
+
+### Innovation in Tech (Question 3)
+
+```{r calculation5, eval=TRUE}
+# Most Innovative Company
+combined_tbl <- patent_assignee_tbl %>%
+  right_join(uspc_tbl, by = "patent_id")%>%
+  right_join(assignee_tbl, by = 'assignee_id')
+
+combined_tbl$patent_count <- ifelse(!is.na(combined_tbl$patent_id), 1, 0)
+
+result12 <- combined_tbl %>%
+  #filter(type == 2 | type == 3) %>%
+  group_by('USPTO Tech Main Class' = mainclass_id) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents))%>%
+  slice(1:5)
+result12
+```
+

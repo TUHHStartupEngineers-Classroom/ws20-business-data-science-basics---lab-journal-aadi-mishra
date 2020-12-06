@@ -40,7 +40,7 @@ radonbike_category_tbl <- html_home%>%
   html_attr('href')%>%
   discard(.p =~ str_detect(.x,"/wear/*"))%>%
   enframe(name = "position", value = "Category_Path")%>%
-  separate(col = Category_Path, into = c("garbage1","Model", "Variant", "garbage2"), sep = "/")%>%
+  separate(col = Category_Path, into = c("garbage1","Category", "Model", "garbage2"), sep = "/")%>%
   select(Model, Variant)
 radonbike_category_tbl
 #https://www.radon-bikes.de/mountainbike/hardtail/
@@ -75,6 +75,5 @@ radonbike_fullsuspension_prices_tbl <- html_home%>%
   enframe(name = "position", value = "Fullsuspension_Prices")%>%
   select("Fullsuspension_Prices")
 radonbike_fullsuspension_prices_tbl
-
-prices_joined_tbl <- rbind.fill(mtcars[c(radonbike_hardtail_prices_tbl, radonbike_fullsuspension_prices_tbl)])
-prices_joined_tbl 
+length(radonbike_fullsuspension_prices_tbl) <- length(radonbike_hardtail_prices_tbl)
+radonbike_fullsuspension_prices_tbl
