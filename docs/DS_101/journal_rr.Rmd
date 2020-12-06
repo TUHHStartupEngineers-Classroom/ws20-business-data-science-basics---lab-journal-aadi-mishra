@@ -1,0 +1,839 @@
+---
+title: "Journal (reproducible report)"
+author: "Roy Ruiz"
+date: "2020-12-06"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    collapsed: false
+    number_sections: false
+    toc_depth: 3
+    #code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
+```
+
+**BUSINESS DATA SCIENCE BASICS**
+
+This is an `.Rmd` file where all my work in R is recorded. The journal will consist of plain text, code blocks, and graphs/plots to illustrate completeness of the code.
+
+The journal is divided into sections: one for each assignment (coding challenge). If you want to jump to a specific assignment, please refer to the table of contents in the top left part of the page.
+
+Thank you, and I hope this is of any use to you. Enjoy!
+
+
+# **Assignment No. 1**
+
+*Last compiled:* **`r Sys.Date()`**
+
+
+**Goal**
+
+My responsibility is to study the products, look for opportunities to sell new products, and better serve the customer and market the products. All of this is supposed to be justified by data. For this I will delve into R with a real world situation.
+
+The goal is to analyze the sales of bikes sold through bike stores in Germany. The bike models correspond to the models of the manufacturer Canyon. However, please note the sales and store data are made up for demonstration purposes.
+
+For this, I will be importing, wrangling and visualizing the provided data (source of raw data is linked below). You may download the data in case you want to try this code on your own.
+
+*Raw data source*:<br />
+```{r echo=FALSE}
+
+# multiple files
+xfun::embed_files(c('../00_data/01_bike_sales/01_raw_data/bikes.xlsx',
+                   '../00_data/01_bike_sales/01_raw_data/bikeshops.xlsx',
+                   '../00_data/01_bike_sales/01_raw_data/orderlines.xlsx'), name = 'bike_sales.zip')
+
+```
+
+
+**Data**
+
+The bike sales data is divided in multiple data sets for better understanding and organization. The Entity Relationship Diagram (ERD), which is used for describing and defining the data models, is shown below. It illustrates the logical structure of the databases.
+
+<center>
+![Data Schema (ERD)](./images/ERD.svg){#id .class width=100% height=100%}<br />*Bike Sales Data ERD*<br /><br />
+</center>
+
+The data set has information of ~15k orders from 2015 to 2019 made from multiple bike stores in Germany. Its features allows viewing an order from multiple dimensions: from price to customer location, product attributes and many more.
+
+
+## Step 1: Load libraries
+
+As a first step, please load `tidyverse`, `readxl`, and `lubridate` libraries. For details on what these libraries offer, please refer to the comments in the code block below.
+
+```{r}
+# Work with File System
+library(fs)           # working with the file system
+
+# Import
+library(readxl)       # reading excel files
+library(writexl)      # saving data as excel files
+
+# Tidy, Transform, & Visualize
+library(lubridate)    # working with dates and times
+library(tidyverse)
+#  library(tibble)    --> is a modern re-imagining of the data frame
+#  library(readr)     --> provides a fast and friendly way to read rectangular data like csv
+#  library(dplyr)     --> provides a grammar of data manipulation
+#  library(magrittr)  --> offers a set of operators which make your code more readable (pipe operator)
+#  library(tidyr)     --> provides a set of functions that help you get to tidy data
+#  library(stringr)   --> provides a cohesive set of functions designed to make working with strings easy
+#  library(ggplot2)   --> graphics
+
+# Other
+library(devtools)    # used to install non-CRAN packages
+```
+
+
+If you haven't installed these packages, please install them by calling `install.packages(`*[name_of_package]*`)` in the R console. After installing, run the above code block again.
+
+
+## Step 2: Import Files
+
+Read excel files and store the data structure as a tibble. A good convention is to use the file name and suffix it with tbl.
+
+```{r}
+bikes_tbl <- read_excel(path = "../00_data/01_bike_sales/01_raw_data/bikes.xlsx")
+orderlines_tbl <- read_excel("../00_data/01_bike_sales/01_raw_data/orderlines.xlsx")
+bikeshops_tbl  <- read_excel("../00_data/01_bike_sales/01_raw_data/bikeshops.xlsx")
+```
+
+
+## Step 3: Examine Data
+
+It's a good practice to take a look and get afeel of the data by examining it. I find two methods to be the most useful:
+<ul>
+<li>*Method 1*: Printing it to the console.</li>
+<li>*Method 2*: Running `glimpse()` function - helpful for wide data (data with many columns).</li>
+</ul>
+
+**Method 1**
+
+```{r}
+orderlines_tbl
+```
+
+**Method 2**
+
+```{r}
+glimpse(orderlines_tbl)
+```
+
+
+## Step 4: Manipulate Data by Joining
+
+This is where the ERD comes into play. As you know from the ERD, there are certain entities that relate through one another. That's denoted by the connectors shown in the ERD image above. We start by merging order items and producs, and then we chain all joins together. A new variable called `bike_orderlines_joined_tbl` is stored in the Global Environment.
+
+```{r}
+# Chaining commands with the pipe and assigning it to order_items_joined_tbl
+bike_orderlines_joined_tbl <- orderlines_tbl %>%
+  left_join(bikes_tbl, by = c("product.id" = "bike.id")) %>%
+  left_join(bikeshops_tbl, by = c("customer.id" = "bikeshop.id"))
+
+# Examine the results with glimpse()
+bike_orderlines_joined_tbl %>% glimpse()
+```
+
+
+## Step 5: Wrangle Data
+
+The data requires more manipulation and further cleaning in order to visualize the data properly. The objective of this assignment is to create a wrangled object to analyze sales by location (state). To examine how the state is recorded in the data, it'd be wise to get unique elements of the `location` column of `bike_orderlines_joined_tbl`.
+
+```{r}
+bike_orderlines_joined_tbl$location %>% unique()
+```
+
+
+Afterwards, a set of actions are performed as shown below. Please note all actions are chained with the pipe already. However, each step can be performed separately with use `glimpse()` for code validation.
+
+```{r}
+# Store the result in a variable at the end of the steps.
+bike_orderlines_wrangled_tbl <- bike_orderlines_joined_tbl %>%
+  separate(col = location,
+           into = c("city", "state"),
+           sep = ", ") %>%
+  
+  # Add the total price (price * quantity) 
+  # Add a column to a tibble that uses a formula-style calculation of other columns
+  mutate(total.price = price * quantity) %>%
+  
+  # Reorder the data by selecting the columns in desired order.
+  select(order.id, contains("order"), contains("model"), contains("state"),
+         contains("city"), price, quantity, total.price,
+         everything()) %>%
+  
+  # Rename columns to replace 'name' with 'bikeshop' and dots with underscores
+  # (one at the time vs. multiple at once)
+  rename(bikeshop = name) %>%
+  set_names(names(.) %>% str_replace_all("\\.", "_"))
+```
+
+
+## Step 6: Visualize Data Through Insights
+
+### Sales by State (Part 1)
+
+In order to analyze the sales by state, we first need to manipulate the data a bit more, so it can be visualized correctly. The results are stored in the `sales_by_loc_tbl` tibble. Both data manipulation and visualization for the first part of the assignment is shown below.
+
+
+**Manipulate**
+
+```{r}
+# Manipulate the data and store result
+sales_by_loc_tbl <- bike_orderlines_wrangled_tbl %>%
+  
+  # Select columns
+  select(contains("state"), total_price) %>%
+  
+  # Grouping by year and summarizing sales
+  group_by(state) %>% 
+  summarize(sales = sum(total_price)) %>%
+  arrange(desc(sales)) %>%
+  # Optional: Add a column that turns the numbers into a currency format 
+  # (makes it in the plot optically more appealing)
+  # mutate(sales_text = scales::dollar(sales)) <- Works for dollar values
+  mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                     decimal.mark = ",", 
+                                     prefix = "", 
+                                     suffix = " €"))
+
+sales_by_loc_tbl
+```
+
+
+**Visualize**
+
+```{r plot1, fig.width=10, fig.height=7}
+sales_by_loc_tbl %>%
+  # Setup canvas with the columns state (x-axis) and sales (y-axis)
+  # States are reordered in decreasing sales for a better visual (e.g. similar to Pareto chart)
+  ggplot(aes(x = reorder(state,-sales), y = sales)) +
+  # Rotate the x-axis labels
+  theme(axis.title.x = element_text(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  
+  # Geometries
+  geom_col(fill = "#2D303E") + # Use geom_col for a bar plot and fill with color
+  # Adding labels to the bars along with formatting for better presentation
+  geom_text(aes(label = sales_text), position = position_dodge(width = 0.9), 
+          hjust = -0.1, size = 2.5, show.legend = FALSE, angle = 90) +
+  
+  # Formatting and re-scaling the y-axis
+  # Again, we have to adjust it for euro values
+  scale_y_continuous(expand = c(0,0), limits = c(0,25000000),
+                     labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  
+  # Final touches to the plot to ensure titles/subtitles are present
+  labs(title    = "Revenue by State",
+       subtitle = "Ordered from most to least total revenue",
+       x = "State", # Changes the x-axis name
+       y = "Revenue")
+```
+
+
+### Sales by State and Year (Part 2)
+
+In efforts to analyze the sales by state and year, the data needs to be manipulated differently, so it can be visualized correctly. For that, the results are stored in a different tibble: `sales_by_loc_year_tbl`. Both data manipulation and visualization for the second part of the assignment is shown below.
+
+
+**Manipulate**
+
+```{r}
+# Manipulate the data and store result
+sales_by_loc_year_tbl <- bike_orderlines_wrangled_tbl %>%
+  
+  # Select columns
+  select(order_date, contains("state"), total_price) %>%
+  
+  # Add year column
+  # Note the year() function runs if "lubridate" package was run via library() function
+  mutate(year = year(order_date)) %>%
+  
+  # Grouping by state and year and summarizing sales
+  group_by(state, year) %>% 
+  summarize(sales = sum(total_price)) %>%
+  arrange(year) %>% 
+  ungroup() %>%
+  
+  # Format $ Text
+  mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                     decimal.mark = ",", 
+                                     prefix = "", 
+                                     suffix = " €"))
+
+sales_by_loc_year_tbl
+```
+
+
+**Visualize**
+
+```{r plot2, fig.width=10, fig.height=7}
+sales_by_loc_year_tbl %>%
+  # Setup canvas with the columns year (x-axis), sales (y-axis) and state (fill)
+  ggplot(aes(x = year, y = sales, fill = state)) +
+  # Rotate the x-axis labels
+  theme(axis.title.x = element_text(), axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position="top") +
+  
+  # Geometries
+  geom_col() + # Use geom_col for a bar plot
+  
+  # Facet
+  facet_wrap(~ state, nrow = 2) +
+  
+  # Adding labels to the bars along with formatting for better presentation
+  geom_text(aes(label = sales_text), position = position_dodge(width = 0.9), 
+            hjust = -0.1, size = 2.5, show.legend = FALSE, angle=90) +
+  
+  # Formatting and re-scaling the y-axis
+  # Again, we have to adjust it for euro values
+  scale_y_continuous(expand = c(0,0), limits = c(0,7500000),
+                     labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  
+  # Final touches to the plot to ensure titles/subtitles are present
+  labs(title = "Revenue by State and Year",
+       x = "Year",
+       y = "Revenue",
+       # Changes the legend name
+       fill = "State")
+```
+
+
+# **Assignment No. 2**
+
+This assignment had two objectives:
+<ul>
+<li>*Objective 1*: Request data via a public API.</li>
+<li>*Objective 2*: Scrape web of one of the competitors of Canyon Bikes and create a small database. The database should contain the model names and prices for at least one category.</li>
+</ul>
+
+
+## Step 1: Load libraries
+
+As a first step, please load `tidyverse`, `readxl`, and `lubridate` libraries. For details on what these libraries offer, please refer to the comments in the code block below.
+
+```{r}
+# STEP 1: Load Libraries ---
+# Work with File System
+library(fs)           # working with the file system
+
+# Tidy, Transform, & Visualize
+library(tidyverse)
+#  library(tibble)    --> is a modern re-imagining of the data frame
+#  library(readr)     --> provides a fast and friendly way to read rectangular data like csv
+#  library(dplyr)     --> provides a grammar of data manipulation
+#  library(magrittr)  --> offers a set of operators which make your code more readable (pipe operator)
+#  library(tidyr)     --> provides a set of functions that help you get to tidy data
+#  library(stringr)   --> provides a cohesive set of functions designed to make working with strings easy
+#  library(ggplot2)   --> graphics
+
+library(RSQLite)        # Database Connection
+library(httr)           # Make HTTP Requests
+library(glue)           # String Interpolation
+library(jsonlite)       # JSON Conversions
+library(stringr)        # Wrappers for Common String Operators
+library(rvest)          # Wrappers to Download, Manipulate HTML/XML
+library(purrr)          # Functional Programming Toolkit for R
+```
+
+
+If you haven't installed these packages, please install them by calling `install.packages(`*[name_of_package]*`)` in the R console. After installing, run the above code block again.
+
+
+## Challenge 1: API Request
+
+The goal of this challenge is to access web data that is stored in a remote server
+
+Typically, data is in `json`,`xml`, or `html` format. It consists of an exposed file path, which is nothing but the URL to access the web data. It is referred to as an API (application programming interface). We invoke/consume the corresponding API using HTTP clients in R when wanting to access data. HTTP is designed to enable communications between clients and servers. Request actions commonly used are: `GET` and `POST`. APIs offer data scientists a polished way to request clean and curated data from a website.
+
+For this challenge, I used the iTunes Search API. For more details on what you can and can't do, please visit their website: https://affiliate.itunes.apple.com/resources/documentation/itunes-store-web-service-search-api/.
+
+I decided to pull information about the famous trap artist, Bad Bunny and limit the results to 25. For this, I built a simple API wrapper function where I `path` and `queries` as arguments to the function. The wrapper function includes error checking, where it automatically throws an error if a request did not succeed.
+
+```{r}
+# response <- GET("https://itunes.apple.com/search?term=bad+bunny&limit=25")
+# However, it's best to wrap into a function
+itunes_search_api <- function(path, query) {
+  url <- modify_url(url = "https://itunes.apple.com", 
+                    path = glue("/{path}"), 
+                    query = glue("{query}"))
+  response <- GET(url)
+  stop_for_status(response) # automatically throws an error if a request did not succeed
+}
+
+# Searches for all Bad Bunny audio and video content and return only the first 25 items
+response <- itunes_search_api("search", paste("term=bad+bunny","limit=25",sep="&"))
+
+# Convert JSON as text into a nested list object and convert to tibble
+response_tbl <- fromJSON(content(response, as = "text")) %>%
+  map_if(is.data.frame, list) %>%
+  as_tibble() %>%
+  unnest(cols = c(results))
+```
+
+
+## Challenge 2: HTML Web Scraping
+
+As part of this challenge, I scraped the web of one of the competitors of Canyon Bikes and created a small database. The database is in the form a tibble and can be seen below. It contains the model names and prices for one of bike categories. In this case, I chose to output the data for their road bikes.
+
+To get a good understanding of the website structure, I used `selectorgadget` by saving the following code as a bookmark in my web browser:
+```
+javascript:(function()%7Bvar s=document.createElement('div');s.innerHTML='Loading...';s.style.color='black';s.style.padding='20px';s.style.position='fixed';s.style.zIndex='9999';s.style.fontSize='3.0em';s.style.border='2px solid black';s.style.right='40px';s.style.top='40px';s.setAttribute('class','selector_gadget_loading');s.style.background='white';document.body.appendChild(s);s=document.createElement('script');s.setAttribute('type','text/javascript');s.setAttribute('src','https://dv0akt2986vzh.cloudfront.net/unstable/lib/selectorgadget.js');document.body.appendChild(s);%7D)();
+```
+
+In general, web scraping in R (or in any other language) boils down to the following three steps:
+<ul>
+<li>Get the HTML for the web page that you want to scrape.</li>
+<li>Decide what part of the page you want to read and find out what HTML/CSS you need to select it.</li>
+<li>Select the HTML and analyze it in the way you need.</li>
+</ul>
+
+```{r}
+url_home <- "https://www.rosebikes.com"
+# To open links directly from RStudio to inspect them with 'selectorgadget' pass value to xopen() i.e. xopen(url_home)
+
+# Read in the HTML for the entire web page
+html_home <- read_html(url_home)
+# Web scrape for the families of bikes
+rosebike_category_tbl <- html_home %>%
+  # Get the nodes for the families ...
+  html_nodes(css = ".main-navigation-category-with-tiles__link") %>%
+  #html_nodes(xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "main-navigation-category-with-tiles__link", " " ))]') %>%
+  # ...and extract the information from href attribute
+  html_attr('href') %>%
+  # Remove the product family sale because these are repeat listings
+  #~str_detect("sale")
+  grep(paste("/bikes/sale", collapse = "|"), ., invert = TRUE, value = TRUE) %>%
+  
+  #discard(., .p =~ str_detect(.,"/bikes/sale")) %>%
+  # Convert vector to tibble
+  enframe(name = "position", value = "Category_Path") %>%
+  # Add a new column with family name
+  mutate(Category_Name = stringr::str_replace(Category_Path,"/bikes/",""))
+
+rosebike_category_tbl
+
+# Code below scrapes web data from ROSE's Road Bikes
+# Create new url by appending '/'bikes/road' to original url -- url_home
+rosebike_road_category_url <- str_c(url_home,rosebike_category_tbl$Category_Path[2])
+
+# Read in the HTML for the category web page
+html_road_bike_category <- read_html(rosebike_road_category_url)
+
+rosebike_model_names <- html_road_bike_category %>%
+  # Get the nodes for the model names ...
+  html_nodes(css = '.catalog-category-bikes__title-text') %>%
+  # ...and extract the text information while trimming leading and trailing spaces
+  html_text(trim = TRUE) %>%
+  # Convert vector to tibble
+  enframe(name = "position", value = "Model_Name") %>%
+  # Add a new column to add category name
+  mutate(Category_Name = toupper(rosebike_category_tbl$Category_Name[2]))
+# Print ROSE's Road Bikes model names
+rosebike_model_names
+
+rosebike_model_prices <- html_road_bike_category %>%
+  # Get the nodes for the model prices ...
+  html_nodes(css = '.catalog-category-bikes__price-title') %>%
+  # ...and extract the text information while trimming leading and trailing spaces
+  html_text(trim = TRUE) %>%
+  # Use regex to extract the prices from the text
+  str_extract(pattern = "\\d{1,3}\\,?\\d{3}\\.?\\d{1,2}") %>%
+  # Convert the result into number
+  parse_number() %>%
+  # Convert vector to tibble
+  enframe(name = "position", value = "Price") %>%
+  # Add a new column to turn the price numbers into a currency format 
+  mutate(Price_Text = scales::dollar(Price, big.mark = ".", 
+                                   decimal.mark = ",", 
+                                   prefix = "", 
+                                   suffix = " €"))
+# Print ROSE's Road Bikes model prices
+rosebike_model_prices
+
+# Join tables together for one final table
+rosebike_cat_mdl_price_joined <- left_join(rosebike_model_names,rosebike_model_prices)
+
+# Output the FINAL tibble of ROSE's bikes with model, category, and price as columns
+rosebike_cat_mdl_price_joined
+```
+
+
+The code shown above is merely an introduction to web scraping static sites with the use `rvest` library. However, keep in mind many web pages are dynamic and use JavaScript to load their content.These websites often require a different approach to gather the data and `rvest` library would not suffice.
+
+<u>Things to keep in mind...</u>
+<ul>
+<li>*Static & Well Structured*: Web scraping is best suited for static & well structured web pages.</li>
+<li>*Code Changes*: The underling HTML code of a web page can change anytime due to changes in design or for updating details. In such case, your script will stop working. It is important to identify changes to the web page and modify the web scraping script accordingly.</li>
+<li>*API Availability*: In many cases, an API is made available by the service provider or organization. It is always advisable to use the API and avoid web scraping.</li>
+<li>*IP Blocking*: Have some time gap between request so that your IP address is not blocked from accessing the website. Of course, you can also learn to work your way around the anti scraping methods. However, you do need to understand the legality of scraping data and whatever you are doing with the scraped data: http://www.prowebscraper.com/blog/six-compelling-facts-about-legality-of-web-scraping/
+</li>
+</ul>
+
+
+# **Assignment No. 3**
+
+The main objective of this challenge is to perform analysis on publicly available patent data. Patents play a critical role in incentivizing innovation, without which we would not have much of the technology we rely on everyday. A patent provides its owner with the ability to make money off of something that they invented, without having to worry about someone else copying their technology.
+
+PatentsView is one of USPTO’s (United States Patent and Trademark Office) new initiatives intended to increase the usability and value of patent data. That data can be downloaded here:
+
+Website: <a href="https://www.patentsview.org/download/">https://www.patentsview.org/download/</a>
+
+*Further details about the data*:<br />
+```{r echo=FALSE}
+
+# Patents DB dictionary bulk downloads
+xfun::embed_file('../00_data/04_patent_data/Patents_DB_dictionary_bulk_downloads.xlsx')
+```
+
+
+Detailed information about the datatypes for each column of the tables available in PatentsView can be found in the `Patents_DB_dictionary_bulk_downloads.xlsx` file. This helps create the *“recipe”* to import the right data for analysis.
+
+At the end of this challenge, the folowing questions are answered:
+<ul>
+<li>*[Q1] Patent Dominance*: What **US company/corporation** has the most patents? List the 10 US companies with the most assigned/granted patents.</li>
+<li>*[Q2] Recent Patent Activity*: What US company had the most patents granted in 2019? List the top 10 companies with the most new granted patents for 2019.</li>
+<li>*[Q3] Innovation in Tech*: What is the most innovative tech sector? For the top 10 companies **(worldwide)** with the most patents, what are the top 5 USPTO tech main classes?</li>
+</ul>
+
+<br />
+<table>
+<thead>
+<tr><th>**Question**</th><th>**Table**</th></tr>
+</thead>
+<tbody>
+<tr><td>**1**</td><td>*assignee*, *patent_assignee*</td></tr>
+<tr><td>**2**</td><td>*assignee*, *patent_assignee*, *patent*</td></tr>
+<tr><td>**3**</td><td>*assignee*, *patent_assignee*, *uspc*</td></tr>
+</tbody>
+</table>
+<br />
+
+## Step 1: Load libraries
+
+As a first step, please load `tidyverse` and `vroom` libraries. For details on what these libraries offer, please refer to the comments in the code block below.
+
+```{r}
+# STEP 1: Load Libraries ---
+# Tidy, Transform, & Visualize
+library(tidyverse)
+#  library(tibble)    --> is a modern re-imagining of the data frame
+#  library(readr)     --> provides a fast and friendly way to read rectangular data like csv
+#  library(dplyr)     --> provides a grammar of data manipulation
+#  library(magrittr)  --> offers a set of operators which make your code more readable (pipe operator)
+#  library(tidyr)     --> provides a set of functions that help you get to tidy data
+#  library(stringr)   --> provides a cohesive set of functions designed to make working with strings easy
+#  library(ggplot2)   --> graphics
+
+library(vroom)        # Imports delimited files fast
+```
+
+
+If you haven't installed these packages, please install them by calling `install.packages(`*[name_of_package]*`)` in the R console. After installing, run the above code block again.
+
+
+## Step 2: Import the data
+
+Next, we import the data from the tables shown above: `assignee`, `patent_assignee`, `patent`, and `uspc`. Please note that after you download the data from PatentsView website, you will need to specify the correct file path when executing the `vroom()` function.
+
+As the data is being pulled, it's a good practice to view the dimensions and glimpse the data you're dealing with by piping `dim()` and `glimpse()` respectively. Since we're dealing with larger data, I decided to ommit this from demonstration. Instead, they are commented in the code sections below.
+
+```{r calculation, eval=FALSE}
+# Import Assignee Data
+col_types <- list(
+  id = col_character(),
+  type = col_double(),
+  name_first = col_character(),
+  name_last = col_character(),
+  organization = col_character())
+
+assignee_data <- vroom(
+  file       = "../00_data/04_patent_data/01_raw_data/assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL"))
+
+# View dimensions and glimpse of the 'assignee' data
+#assignee_data %>% dim()
+#assignee_data %>% glimpse()
+
+# Import Patent Data
+col_types <- list(
+  id = col_character(),
+  type = col_character(),
+  number = col_character(),
+  country = col_character(),
+  date = col_date("%Y-%m-%d"),
+  abstract = col_character(),
+  title = col_character(),
+  kind = col_character(),
+  num_claims = col_double(),
+  filename = col_character(),
+  withdrawn = col_character())
+
+patent_data <- vroom(
+  file       = "../00_data/04_patent_data/01_raw_data/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL"))
+
+# View dimensions and glimpse of the 'patent' data
+#patent_data %>% dim()
+#patent_data %>% glimpse()
+
+# Import Patent Assignee Data
+col_types <- list(
+  patent_id = col_character(),
+  assignee_id = col_character(),
+  location_id = col_character())
+
+patent_assignee_data <- vroom(
+  file       = "../00_data/04_patent_data/01_raw_data/patent_assignee.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL"))
+
+# View dimensions and glimpse of the 'patent_assignee' data
+#patent_assignee_data %>% dim()
+#patent_assignee_data %>% glimpse()
+
+# Import USPC Data
+col_types <- list(
+  uuid = col_character(),
+  patent_id = col_character(),
+  mainclass_id = col_character(),
+  subclass_id = col_character(),
+  sequence = col_double())
+
+uspc_data <- vroom(
+  file       = "../00_data/04_patent_data/01_raw_data/uspc.tsv", 
+  delim      = "\t", 
+  col_types  = col_types,
+  na         = c("", "NA", "NULL"))
+
+# View dimensions and glimpse of the 'uspc' data
+#uspc_data %>% dim()
+#uspc_data %>% glimpse()
+```
+
+
+## Step 3: Wrangle Analyze the data
+
+Next, I performed some minor changes to the data in order to prepare them for joining `dplyr` operations. Please note `dplyr` is loaded when you load the `tidyverse` library during step 1.
+
+```{r calculation, eval=FALSE}
+# Create new column to with year only; necessary for data output below
+# Be sure to have "lubridate" package installed before running the next lines
+patent_data <- patent_data %>% 
+  mutate(year = lubridate::year(date))
+
+# Rename column names for following joining operations
+assignee_data <- assignee_data %>% rename(assignee_id = id)
+patent_data <- patent_data %>% rename(patent_id = id)
+```
+
+
+You will also notice I call `rm` command to remove the joined data from Rstudio's global environment. This can help with how fast your system performs the `dplyr` operations. This is primarily important because we're dealing with millions of observations per table.
+
+One more thing to note is I use `tic()` and `toc()` commands from `tictoc` library to track how long it takes to perform operations. I feel it's a good practice to do so.
+
+
+### Patent Dominance (Question 1)
+
+```{r calculation, eval=FALSE}
+# Be sure to have "tictoc" package installed before running the next lines
+# Join 'assignee' and 'patent_assignee' tables
+tictoc::tic()
+combined_data <- assignee_data %>%
+  right_join(patent_assignee_data, by = "assignee_id")
+tictoc::toc()
+
+# Columns to keep; speeds up the data wrangling
+keep <- c("assignee_id",
+          "type",
+          "organization",
+          "patent_id")
+combined_data <- combined_data[keep]
+
+# Quantify whether each row has patent or not since patent_id column has NA values
+combined_data$patent_count <- ifelse(!is.na(combined_data$patent_id), 1, 0)
+
+
+## PATENT DOMINANCE ##
+# What US company / corporation has the most patents?
+# List the 10 US companies with the most assigned/granted patents.
+result5 <- combined_data %>%
+  # Filter by type 2 to get US Companies/Organizations
+  filter(type == 2) %>%
+  # Add number of patents by each organization and sort in descending order
+  # Changed the column name for better legibility of what were looking for
+  group_by("US Company / Organization" = organization) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents)) %>%
+  # Output the top 10 US companies/organizations with most assigned/granted patents
+  slice(1:10)
+
+write_rds(result5, "temp_results/result5.rds")
+# Remove the combined_data from Rstudio's global environment for memory deallocation
+rm(combined_data)
+```
+```{r result5}
+result <- read_rds("temp_results/result5.rds")
+#file.remove("../02_data_wrangling/result.rds")
+
+result
+```
+
+### Recent Patent Activity (Question 2)
+
+```{r calculation, eval=FALSE}
+# Be sure to have "tictoc" package installed before running the next lines
+# Join 'assignee', 'patent_assignee', and 'patent' tables
+tictoc::tic()
+combined_data <- patent_assignee_data %>%
+  right_join(patent_data, by = "patent_id")
+tictoc::toc()
+
+tictoc::tic()
+combined_data <- assignee_data %>%
+  right_join(combined_data, by = "assignee_id")
+tictoc::toc()
+
+# Columns to keep; speeds up the data wrangling
+keep <- c("assignee_id",
+          "type.x",
+          "organization",
+          "patent_id",
+          "number",
+          "year")
+combined_data <- combined_data[keep]
+
+# Quantify whether each row has patent or not since patent_id column has NA values
+combined_data$patent_count <- ifelse(!is.na(combined_data$patent_id), 1, 0)
+
+
+## RECENT PATENT ACTIVITY ##
+# What US company had the most patents granted in 2019?
+# List the top 10 companies with the most new granted patents for 2019.
+result6 <- combined_data %>%
+  # Filter by type 2 and year 2019 to get 2019 US Companies/Organizations
+  filter(type.x == 2, year == 2019) %>%
+  # Add number of patents by each organization and sort in descending order
+  # Changed the column name for better legibility of what were looking for
+  group_by("US Company / Organization" = organization) %>%
+  summarise(Patents_Total_2019 = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Patents_Total_2019)) %>%
+  # Output the top 10 US companies/organizations with most assigned/granted patents in 2019
+  slice(1:10)
+
+write_rds(result6, "temp_results/result6.rds")
+# Remove the combined_data from Rstudio's global environment for memory deallocation
+rm(combined_data)
+```
+```{r result6}
+result <- read_rds("temp_results/result6.rds")
+#file.remove("../02_data_wrangling/result.rds")
+
+result
+```
+
+### Innovation in Tech (Question 3)
+
+```{r calculation, eval=FALSE}
+# Be sure to have "tictoc" package installed before running the next lines
+# Join 'assignee', 'patent_assignee', and 'uspc' tables
+tictoc::tic()
+combined_data <- patent_assignee_data %>%
+  right_join(uspc_data, by = "patent_id")
+tictoc::toc()
+
+tictoc::tic()
+combined_data <- assignee_data %>%
+  right_join(combined_data, by = "assignee_id")
+tictoc::toc()
+
+# Columns to keep; speeds up the data wrangling
+keep <- c("assignee_id",
+          "type",
+          "organization",
+          "patent_id",
+          "mainclass_id",
+          "subclass_id")
+combined_data <- combined_data[keep]
+
+# Quantify whether each row has patent or not since patent_id column has NA values
+combined_data$patent_count <- ifelse(!is.na(combined_data$patent_id), 1, 0)
+
+
+## INNOVATION IN TECH ##
+# What is the most innovative tech sector?
+# For the top 10 companies (worldwide) with the most patents, what are the top 5 USPTO tech main classes?
+result7 <- combined_data %>%
+  # Filter by type 2 or 3 in data set to get worldwide companies
+   filter(type == 2 | type == 3) %>%
+  # Add number of patents by tech main classes and sort in descending order
+  # Changed the column name for better legibility of what were looking for
+  group_by('USPTO Tech Main Class' = mainclass_id) %>%
+  summarise(Patents_Total = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Patents_Total)) %>%
+  # Output the top 5 USPTO tech main classes of the top worldwide companies with most patents
+  slice(1:5)
+  ## 257	Active solid-state devices (e.g., transistors, solid-state diodes)
+  ## 428	Stock material or miscellaneous articles
+  ## 435	Chemistry: molecular biology and microbiology
+  ## 514	Drug, bio-affecting and body treating compositions
+  ## 438	Semiconductor device manufacturing: process
+
+write_rds(result7, "temp_results/result7.rds")
+# Remove the combined_data from Rstudio's global environment for memory deallocation
+rm(combined_data)
+```
+```{r result7}
+result <- read_rds("temp_results/result7.rds")
+result
+```
+
+# Assignment No. 4
+
+Write text here...
+
+
+
+## Second level header
+
+You can add more headers by adding more hashtags. These won't be put into the table of contents
+
+### third level header
+
+
+Here's an even lower level header
+
+# My second post (note the order)
+
+Last compiled: `r Sys.Date()`
+
+I'm writing this tutorial going from the top down. And, this is how it will be printed. So, notice the second post is second in the list. If you want your most recent post to be at the top, then make a new post starting at the top. If you want the oldest first, do, then keep adding to the bottom
+
+# Adding R stuff
+
+So far this is just a blog where you can write in plain text and serve your writing to a webpage. One of the main purposes of this lab journal is to record your progress learning R. The reason I am asking you to use this process is because you can both make a website, and a lab journal, and learn R all in R-studio. This makes everything really convenient and in the same place.
+
+So, let's say you are learning how to make a histogram in R. For example, maybe you want to sample 100 numbers from a normal distribution with mean = 0, and standard deviation = 1, and then you want to plot a histogram. You can do this right here by using an r code block, like this:
+
+```{r}
+samples <- rnorm(100, mean=0, sd=1)
+hist(samples)
+```
+
+When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
