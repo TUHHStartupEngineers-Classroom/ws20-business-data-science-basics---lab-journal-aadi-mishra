@@ -1,7 +1,7 @@
 ---
 title: "Journal (reproducible report)"
-author: "Joschka Schwarz"
-date: "2020-11-05"
+author: "Aadi Nath Mishra"
+date: "Dec 3 2020"
 output:
   html_document:
     toc: true
@@ -16,39 +16,481 @@ output:
 knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
 ```
 
-**IMPORTANT:** You can delete everything in here and start fresh. You might want to start by not deleting anything above this line until you know what that stuff is doing.
+# Challenge 1 - Sales Analysis
 
-This is an `.Rmd` file. It is plain text with special features. Any time you write just like this, it will be compiled to normal text in the website. If you put a \# in front of your text, it will create a top level-header.
+## Sales Analysis by State
+```{r plot, fig.width=10, fig.height=10}
+# 1.0 Load libraries ----
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(writexl)
 
-# My first post
+# 2.0 Import data ----
+bikes_tbl <- read_excel(path = "DS_101/00_data/01_bike_sales/01_raw_data/bikes.xlsx")
+orderlines_tbl <- read_excel("DS_101/00_data/01_bike_sales/01_raw_data/orderlines.xlsx")
+bikeshops_tbl  <- read_excel("DS_101/00_data/01_bike_sales/01_raw_data/bikeshops.xlsx")
 
-Last compiled: `r Sys.Date()`
+# 3.0 Examining Data ----
+orderlines_tbl
 
-Notice that whatever you define as a top level header, automatically gets put into the table of contents bar on the left. 
+# 4.0 Joining Data ----
+bike_orderlines_joined_tbl <- orderlines_tbl %>%
+  left_join(bikes_tbl, by = c("product.id" = "bike.id")) %>%
+  left_join(bikeshops_tbl, by = c("customer.id" = "bikeshop.id"))
 
-## Second level header
+# 5.0 Wrangling Data ----
 
-You can add more headers by adding more hashtags. These won't be put into the table of contents
+bike_orderlines_wrangled_tbl <- bike_orderlines_joined_tbl %>%
+  separate(col    = location,
+           into   = c("city", "state"),
+           sep    = ", ") %>%
+  
+  mutate(total.price = price * quantity) %>%
+  select(-...1, -gender) %>%
+  select(-ends_with(".id")) %>%
+  bind_cols(bike_orderlines_joined_tbl %>% select(order.id)) %>% 
+  
+  select(order.id, contains("order"), contains("model"), contains("state"),
+         contains("city"), price, quantity, total.price,
+         everything()) %>%
+  
+  rename(bikeshop = name) %>%
+  set_names(names(.) %>% str_replace_all("\\.", "_"))
 
-### third level header
+# 6.0 Business Insights ----
+# 6.1 Sales by Year ----
+# Manipulate the data and store result
+sales_by_loc_tbl <- bike_orderlines_wrangled_tbl %>%
+  
+  # Select columns
+  select(contains("state"), total_price) %>%
+  
+  # Grouping by year and summarizing sales
+  group_by(state) %>% 
+  summarize(sales = sum(total_price)) %>%
+  # Optional: Add a column that turns the numbers into a currency format 
+  # (makes it in the plot optically more appealing)
+  # mutate(sales_text = scales::dollar(sales)) <- Works for dollar values
+  mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                     decimal.mark = ",", 
+                                     prefix = "", 
+                                     suffix = " €"))
 
-Here's an even lower level header
+sales_by_loc_tbl
 
-# My second post (note the order)
-
-Last compiled: `r Sys.Date()`
-
-I'm writing this tutorial going from the top down. And, this is how it will be printed. So, notice the second post is second in the list. If you want your most recent post to be at the top, then make a new post starting at the top. If you want the oldest first, do, then keep adding to the bottom
-
-# Adding R stuff
-
-So far this is just a blog where you can write in plain text and serve your writing to a webpage. One of the main purposes of this lab journal is to record your progress learning R. The reason I am asking you to use this process is because you can both make a website, and a lab journal, and learn R all in R-studio. This makes everything really convenient and in the same place. 
-
-So, let's say you are learning how to make a histogram in R. For example, maybe you want to sample 100 numbers from a normal distribution with mean = 0, and standard deviation = 1, and then you want to plot a histogram. You can do this right here by using an r code block, like this:
-
-```{r}
-samples <- rnorm(100, mean=0, sd=1)
-hist(samples)
+sales_by_loc_tbl %>%
+  
+  # Step 2 - Visualize
+  # Setup canvas with the columns state (x-axis) and sales (y-axis)
+  # States are reordered in decreasing sales for a better visual (e.g. similar to Pareto chart)
+  ggplot(aes(x = state, y = sales)) +
+  # Rotate the x-axis labels
+  theme(axis.title.x = element_text(), axis.text.x = element_text(angle = 45, hjust = 1)) +
+  
+  # Geometries
+  geom_col(fill = "blue") + # Use geom_col for a bar plot and fill with color
+  # Adding labels to the bars along with formatting for better presentation
+  geom_text(aes(label = sales_text), position = position_dodge(width = 0.9), 
+            hjust = -0.1, size = 2.5, show.legend = FALSE, angle = 45) +
+  
+  # Formatting and re-scaling the y-axis
+  # Again, we have to adjust it for euro values
+  scale_y_continuous(expand = c(0,0), limits = c(0,25000000),
+                     labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  
+  # Final touches to the plot to ensure titles/subtitles are present
+  labs(title    = "Revenue by State",
+       x = "State", # Changes the x-axis name
+       y = "Revenue")
 ```
 
-When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
+
+
+## Sales Analysis by State and Year 
+```{r plot2, fig.width=10, fig.height=10}
+# 6.2 Sales by Year and location ----
+# Manipulate the data and store result
+sales_by_loc_year_tbl <- bike_orderlines_wrangled_tbl %>%
+  
+  # Select columns
+  select(order_date, contains("state"), total_price) %>%
+  
+  # Add year column
+  # Note the year() function runs if "lubridate" package was run via library() function
+  mutate(year = year(order_date)) %>%
+  
+  # Grouping by state and year and summarizing sales
+  group_by(state, year) %>% 
+  summarize(sales = sum(total_price)) %>%
+  arrange(year) %>% 
+  ungroup() %>%
+  
+  # Format $ Text
+  mutate(sales_text = scales::dollar(sales, big.mark = ".", 
+                                     decimal.mark = ",", 
+                                     prefix = "", 
+                                     suffix = " €"))
+
+sales_by_loc_year_tbl
+
+sales_by_loc_year_tbl %>%
+  # Setup canvas with the columns year (x-axis), sales (y-axis) and state (fill)
+  ggplot(aes(x = year, y = sales, fill = state)) +
+  # Rotate the x-axis labels
+  theme(axis.title.x = element_text(), axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position="top") +
+  
+  # Geometries
+  geom_col() + # Use geom_col for a bar plot
+  
+  # Facet
+  facet_wrap(~ state, nrow = 2) +
+  
+  # Formatting and re-scaling the y-axis
+  # Again, we have to adjust it for euro values
+  scale_y_continuous(expand = c(0,0), limits = c(0,7500000),
+                     labels = scales::dollar_format(big.mark = ".", 
+                                                    decimal.mark = ",", 
+                                                    prefix = "", 
+                                                    suffix = " €")) +
+  
+  # Final touches to the plot to ensure titles/subtitles are present
+  labs(title = "Revenue by State and Year",
+       x = "Year",
+       y = "Revenue",
+       # Changes the legend name
+       fill = "State") 
+```
+
+Last compiled: `r Sys.Date()`
+
+# Challenge 2 - Data Acquisition
+
+## Using Public API
+```{r}
+# Import Libraries
+library(fs)
+library(tidyverse)
+library(RSQLite)
+library(httr)
+library(glue)
+library(jsonlite) 
+library(stringr)
+library(rvest)
+library(purrr)
+
+
+########################################################################################
+itunes_search_api <- function(path, query) {
+  url <- modify_url(url = "https://itunes.apple.com/", 
+                    path = glue("/{path}"), 
+                    query = glue("{query}"))
+  response <- GET(url)
+  stop_for_status(response) # automatically throws an error if a request did not succeed
+}
+response <- itunes_search_api("search", paste("term=dire+straits","limit=25",sep="&"))
+
+# Convert JSON as text into a nested list object and convert to tibble
+response_tbl <- fromJSON(content(response, as = "text")) %>%
+  map_if(is.data.frame, list) %>%
+  as_tibble() %>%
+  unnest(cols = c(results))
+
+
+response_tbl
+```
+
+## Web Scraping 
+```{r}
+url_home <- "https://www.radon-bikes.de/"
+html_home <- read_html(url_home)
+radonbike_category_tbl <- html_home%>% 
+  html_nodes("div.megamenu__item > a") %>%
+  html_attr('href')%>%
+  discard(.p =~ str_detect(.x,"/wear/*"))%>%
+  enframe(name = "position", value = "Category_Path")%>%
+  separate(col = Category_Path, into = c("garbage1","Model", "Variant", "garbage2"), sep = "/")%>%
+  select(Model, Variant)
+radonbike_category_tbl
+#https://www.radon-bikes.de/mountainbike/hardtail/
+
+mountain_bike_hardtail_url <- str_c(url_home, radonbike_category_tbl$Model[1],"/",radonbike_category_tbl$Variant[1])
+
+html_home <- read_html(mountain_bike_hardtail_url)
+radonbike_hardtail_prices_tbl <- html_home%>%
+  html_nodes("div.button-label > span")%>%
+  html_text(trim = TRUE)%>% 
+  strsplit(split = "\n") %>%
+  unlist() %>%
+  .[. != ""]%>%
+  parse_number()%>%
+  enframe(name = "position", value = "Hardtail_Prices")%>%
+  select("Hardtail_Prices")
+radonbike_hardtail_prices_tbl
+
+mountain_bike_fullsuspension_url <- str_c(url_home, radonbike_category_tbl$Model[1],"/",radonbike_category_tbl$Variant[2])
+
+html_home <- read_html(mountain_bike_fullsuspension_url)
+radonbike_fullsuspension_prices_tbl <- html_home%>%
+  html_nodes("div.button-label > span")%>%
+  html_text(trim = TRUE)%>% 
+  strsplit(split = "\n") %>%
+  unlist() %>%
+  .[. != ""]%>%
+  parse_number()%>%
+  enframe(name = "position", value = "Fullsuspension_Prices")%>%
+  select("Fullsuspension_Prices")
+radonbike_fullsuspension_prices_tbl
+
+```
+
+
+# Challange 3 - Data Wrangling
+
+  ## Step 1: Load libraries
+
+```{r}
+# 1.0 libraries
+library(vroom)
+library(readxl)
+library("writexl")
+library(tidyr)
+library(purrr)
+library("stringr") 
+library(dplyr)
+library(data.table)
+# Tidyverse
+library(tidyverse)
+
+```
+
+## Step 2: Import the data
+
+```{r calculation, eval=TRUE}
+# 2.0 import data
+col_assignee <- list(
+  id = col_character(),
+  type = col_character(),
+  organization = col_character()
+)
+col_patent_assignee <- list(
+  patent_id = col_character(),
+  assignee_id = col_character()
+)
+
+col_patent <- list(
+  id = col_character(),
+  date = col_date("%Y-%m-%d"),
+  num_claims = col_double()
+)
+
+col_uspc <- list(
+  patent_id = col_character(),
+  mainclass_id = col_character(),
+  sequence = col_character()
+)
+
+patent_tbl <- vroom(
+  file       = "DS_101/00_data/03_patent_data/patent.tsv", 
+  delim      = "\t", 
+  col_types  = col_patent,
+  na         = c("", "NA", "NULL")
+)
+assignee_tbl <- vroom(
+  
+  file = "DS_101/00_data/03_patent_data/assignee.tsv",
+  delim      = "\t", 
+  col_types  = col_assignee,
+  na         = c("", "NA", "NULL")
+)
+patent_assignee_tbl <- vroom(
+  
+  file = "DS_101/00_data/03_patent_data/patent_assignee.tsv",
+  delim      = "\t", 
+  col_types  =  col_patent_assignee,
+  na         = c("", "NA", "NULL")
+  
+)
+uspc_tbl <- vroom(
+  
+  file = "DS_101/00_data/03_patent_data/uspc.tsv",
+  delim      = "\t", 
+  col_types  =  col_uspc,
+  na         = c("", "NA", "NULL")
+  
+)
+```
+
+
+## Step 3: Wrangle & Analyze the data
+
+```{r calculation2, eval=TRUE}
+
+patent_tbl <- patent_tbl %>% 
+  mutate(year = lubridate::year(date))
+
+assignee_tbl <- assignee_tbl %>% rename(assignee_id = id)
+patent_tbl <- patent_tbl %>% rename(patent_id = id)
+```
+
+
+### Patent Dominance (Question 1)
+
+```{r calculation3, eval=TRUE}
+combined_tbl <- patent_assignee_tbl %>%
+  left_join(assignee_tbl, by = "assignee_id")
+
+combined_tbl$patent_count <- ifelse(!is.na(combined_tbl$patent_id), 1, 0)
+
+result10 <- combined_tbl %>%
+  # Filter by type 2 to get US Companies/Organizations
+  filter(type == 2) %>%
+  # Add number of patents by each organization and sort in descending order
+  # Changed the column name for better legibility of what were looking for
+  group_by("US Company / Organization" = organization) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents)) %>%
+  # Output the top 10 US companies/organizations with most assigned/granted patents
+  slice(1:10)
+result10
+```
+
+### Recent Patent Activity (Question 2)
+
+```{r calculation4, eval=TRUE}
+# By the Year
+combined_tbl <- patent_assignee_tbl %>%
+  right_join(patent_tbl, by = "patent_id")%>%
+  right_join(assignee_tbl, by = 'assignee_id')
+
+combined_tbl$patent_count <- ifelse(!is.na(combined_tbl$patent_id), 1, 0)
+
+result11 <- combined_tbl %>%
+  filter(type == 2 & year == 2014) %>%
+  group_by(organization) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents))%>%
+  slice(1:10)
+result11
+```
+
+### Innovation in Tech (Question 3)
+
+```{r calculation5, eval=TRUE}
+# Most Innovative Company
+combined_tbl <- patent_assignee_tbl %>%
+  right_join(uspc_tbl, by = "patent_id")%>%
+  right_join(assignee_tbl, by = 'assignee_id')
+
+combined_tbl$patent_count <- ifelse(!is.na(combined_tbl$patent_id), 1, 0)
+
+result12 <- combined_tbl %>%
+  #filter(type == 2 | type == 3) %>%
+  group_by('USPTO Tech Main Class' = mainclass_id) %>%
+  summarise(Total_Patents = sum(patent_count)) %>%
+  ungroup() %>%
+  arrange(desc(Total_Patents))%>%
+  slice(1:5)
+result12
+```
+
+# Challenge 4 - Data Visualization
+##  Time course of the cumulative Covid-19 cases
+```{r plot3, fig.width=10, fig.height=10}
+library(tidyverse)
+library(ggrepel)
+library(maps)
+covid_tbl <- read_csv("https://opendata.ecdc.europa.eu/covid19/casedistribution/csv")
+
+################# CHALLENGE 1 #################
+
+# Goal: Map the time course of the cumulative Covid-19 cases!
+all_countries <- c(covid_tbl$countriesAndTerritories)
+countries <- "France|Germany|Spain|India|Turkey|Russia|United_Kingdom|United_States_of_America"
+
+covid_tbl$desired <- ifelse(grepl(countries, all_countries), 1, 0)
+
+covid_csum <- covid_tbl %>%
+  mutate(date = dmy(dateRep)) %>%
+  # Select relevant columns
+  select(date, day, month, year, countriesAndTerritories, continentExp, desired, cases, deaths) %>%
+  arrange(countriesAndTerritories, date) %>%
+  filter(desired == 1, year == 2020) %>%
+  mutate(cum_sum = ave(cases, countriesAndTerritories, FUN=cumsum))
+#mutate(max_val = max(cum_sum))
+
+max_cases <- covid_csum %>% slice_max(cum_sum)
+
+covid_csum %>%
+  ggplot(aes(x = date, y = cum_sum, color = countriesAndTerritories)) +
+  geom_line(size = 0.5) +
+  
+  
+  #geom_smooth(method="auto", se=FALSE, fullrange=FALSE, level=0.95) +
+  expand_limits(y = 0) +
+  scale_color_brewer(palette = "Set1") +
+  # scale_x_date(date_labels = "%b/%d") +
+  #scale_x_date(labels = date_format("%b"),breaks = covi) +
+  scale_x_date(date_labels = "%b") +
+  #scale_x_date(breaks = covid_data_cum_cases$Month %>% unique(),
+  #labels = month(covid_data_cum_cases$Month, label = TRUE) %>% unique()) +
+  #scale_x_continuous(breaks = sales_by_month_2015$month, 
+  #                   labels = month(sales_by_month_2015$month, label = T))
+  
+  scale_y_continuous(labels = scales::dollar_format(scale = 1/1e6, 
+                                                    prefix = "", 
+                                                    suffix = " Million")) +
+  labs(
+    title = "COVID-19 confirmed cases worldwide",
+    x = "Year 2020",
+    y = "Cumulative Cases",
+    color = "Countries") +
+  #geom_text_repel(data = max_value, aes(x = Date, y = cum_sum, label = Country))
+  #geom_label(aes(label = max_cases$cum_sum))
+  #geom_point(size = 0.1) +
+  #geom_label_repel(data.frame(x = max_cases$Date, y = max_cases$cum_sum), label = max_cases$max_value)
+  geom_label_repel(aes(x = date, y = cum_sum, label = cum_sum), 
+                   data = max_cases,
+                   show.legend = FALSE, 
+                   size = 3) 
+```
+
+## Mortality Rate 
+```{r plot4, fig.width=10, fig.height=10}
+# Goal: Visualize the distribution of the mortality rate (deaths / population) with geom_map().
+# The necessary longitudinal and lateral data can be accessed with this function:
+world <- map_data("world")
+
+covid_deaths <- covid_tbl %>%
+  filter(year == 2020) %>%
+  group_by(countriesAndTerritories) %>%
+  summarise(mortality_rate = sum(deaths/popData2019)) %>%
+  mutate(across(countriesAndTerritories, str_replace_all, "_", " ")) %>%
+  mutate(countriesAndTerritories = case_when(
+    
+    countriesAndTerritories == "United Kingdom" ~ "UK",
+    countriesAndTerritories == "United States of America" ~ "USA",
+    countriesAndTerritories == "Czechia" ~ "Czech Republic",
+    TRUE ~ countriesAndTerritories)) %>%
+  rename(region = countriesAndTerritories)
+
+combined_covid_data <- covid_deaths %>%
+  right_join(world, by = "region")
+
+combined_covid_data %>% 
+  ggplot() +
+  geom_map(aes(long, lat, map_id = region, fill = mortality_rate), map = world) +
+  scale_fill_gradient(low = "black", high = "red", labels = scales::percent) +
+  #expand_limits(x = combined_covid_data$long, y = combined_covid_data$lat) +
+  
+  labs(
+    title = "Confirmed COVID-19 deaths relative to the size of the population",
+    fill = "Mortality Rate")
+
+```
